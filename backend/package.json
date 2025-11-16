@@ -1,0 +1,27 @@
+{
+  "name": "backend",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "backend": "nodemon server.js",
+    "frontend": "cd ../frontend && npm run dev",
+    "dev": "concurrently -n \"BACKEND,FRONTEND\" -c \"green,blue\" \"npm run backend\" \"npm run frontend\"",
+    "build-frontend": "cd ../frontend && npm run build",
+    "serve-full": "npm run build-frontend && npm run dev"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.932.0",
+    "@aws-sdk/s3-request-presigner": "^3.932.0",
+    "aws-sdk": "^2.169.0",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "express": "^5.1.0",
+    "mongoose": "^8.0.3",
+    "multer": "^2.0.2",
+    "multer-s3": "^3.0.1"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "nodemon": "^3.0.1"
+  }
+}
