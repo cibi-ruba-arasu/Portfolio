@@ -2,9 +2,8 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import mongoose from 'mongoose';
-import { S3Client, ListBucketsCommand } from '@aws-sdk/client-s3';
+import { S3Client, ListBucketsCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import multer from 'multer';
-import multerS3 from 'multer-s3';
 
 // Load environment variables
 dotenv.config();
@@ -62,22 +61,9 @@ const imageSchema = new mongoose.Schema({
 
 const Image = mongoose.model('Image', imageSchema);
 
-// Configure multer for S3 upload (without ACL)
+// Configure multer for memory storage (we'll handle S3 upload manually)
 const upload = multer({
-  storage: multerS3({
-    s3: s3,
-    bucket: process.env.S3_BUCKET_NAME,
-    // Remove acl since your bucket has ACLs disabled
-    metadata: (req, file, cb) => {
-      cb(null, { fieldName: file.fieldname });
-    },
-    key: (req, file, cb) => {
-      const fileName = `images/${Date.now()}-${file.originalname}`;
-      cb(null, fileName);
-    },
-    // Add this for public read access without ACL
-    contentType: multerS3.AUTO_CONTENT_TYPE,
-  }),
+  storage: multer.memoryStorage(),
   limits: {
     fileSize: 10 * 1024 * 1024 // 10MB limit
   },
@@ -90,7 +76,7 @@ const upload = multer({
   }
 });
 
-// Upload image endpoint
+// Upload image endpoint - Manual S3 upload for better control
 app.post('/api/upload', upload.single('image'), async (req, res) => {
   try {
     console.log('Upload request received:', req.body);
@@ -105,13 +91,32 @@ app.post('/api/upload', upload.single('image'), async (req, res) => {
       return res.status(400).json({ error: 'Image file is required' });
     }
 
-    console.log('File uploaded to S3:', req.file.location);
+    // Upload to S3 manually
+    const fileName = `images/${Date.now()}-${req.file.originalname}`;
+    
+    const uploadParams = {
+      Bucket: process.env.S3_BUCKET_NAME,
+      Key: fileName,
+      Body: req.file.buffer,
+      ContentType: req.file.mimetype,
+      // Ensure public read access
+      ACL: 'public-read'
+    };
+
+    console.log('Uploading to S3...');
+    const uploadCommand = new PutObjectCommand(uploadParams);
+    await s3.send(uploadCommand);
+
+    // Construct the public URL
+    const imageUrl = `https://${process.env.S3_BUCKET_NAME}.s3.${process.env.S3_BUCKET_LOC}.amazonaws.com/${fileName}`;
+    
+    console.log('File uploaded to S3:', imageUrl);
 
     // Save to MongoDB
     const imageData = new Image({
       title,
       description,
-      imageUrl: req.file.location
+      imageUrl: imageUrl
     });
 
     const savedImage = await imageData.save();
@@ -124,7 +129,44 @@ app.post('/api/upload', upload.single('image'), async (req, res) => {
 
   } catch (error) {
     console.error('Upload error:', error);
-    res.status(500).json({ error: error.message });
+    
+    // Handle ACL error specifically
+    if (error.name === 'AccessControlListNotSupported') {
+      // Try without ACL
+      try {
+        console.log('ACL not supported, trying without ACL...');
+        const fileName = `images/${Date.now()}-${req.file.originalname}`;
+        
+        const uploadParams = {
+          Bucket: process.env.S3_BUCKET_NAME,
+          Key: fileName,
+          Body: req.file.buffer,
+          ContentType: req.file.mimetype
+        };
+
+        const uploadCommand = new PutObjectCommand(uploadParams);
+        await s3.send(uploadCommand);
+
+        const imageUrl = `https://${process.env.S3_BUCKET_NAME}.s3.${process.env.S3_BUCKET_LOC}.amazonaws.com/${fileName}`;
+        
+        const imageData = new Image({
+          title: req.body.title,
+          description: req.body.description,
+          imageUrl: imageUrl
+        });
+
+        const savedImage = await imageData.save();
+        
+        res.status(201).json({
+          message: 'Image uploaded successfully (without ACL)',
+          image: savedImage
+        });
+      } catch (retryError) {
+        res.status(500).json({ error: 'Upload failed: ' + retryError.message });
+      }
+    } else {
+      res.status(500).json({ error: error.message });
+    }
   }
 });
 
@@ -132,6 +174,13 @@ app.post('/api/upload', upload.single('image'), async (req, res) => {
 app.get('/api/images', async (req, res) => {
   try {
     const images = await Image.find().sort({ createdAt: -1 });
+    
+    // Log the image URLs for debugging
+    console.log('Fetched images:');
+    images.forEach(img => {
+      console.log(`- ${img.title}: ${img.imageUrl}`);
+    });
+    
     res.json(images);
   } catch (error) {
     console.error('Error fetching images:', error);

@@ -82,48 +82,58 @@ export default {
       console.log('Selected file:', file);
     },
     async handleSubmit() {
-  if (!this.form.title || !this.form.description || !this.form.image) {
-    alert('Please fill in all fields and select an image');
-    return;
-  }
-
-  try {
-    console.log('Starting upload...');
-    
-    const formData = new FormData();
-    formData.append('title', this.form.title);
-    formData.append('description', this.form.description);
-    formData.append('image', this.form.image);
-
-    const response = await fetch('http://localhost:5000/api/upload', {
-      method: 'POST',
-      body: formData
-    });
-
-    console.log('Response status:', response.status);
-
-    if (response.ok) {
-      const result = await response.json();
-      console.log('Upload successful:', result);
-      alert('Image uploaded successfully!');
-      this.resetForm();
-    } else {
-      // Handle both JSON and HTML responses
-      const responseText = await response.text();
-      console.error('Upload failed. Response:', responseText);
-      
-      try {
-        const errorData = JSON.parse(responseText);
-        alert('Upload failed: ' + (errorData.error || 'Unknown error'));
-      } catch {
-        alert('Upload failed: Server returned unexpected response. Status: ' + response.status);
+      if (!this.form.title || !this.form.description || !this.form.image) {
+        alert('Please fill in all fields and select an image');
+        return;
       }
+
+      try {
+        console.log('Starting upload...');
+        
+        const formData = new FormData();
+        formData.append('title', this.form.title);
+        formData.append('description', this.form.description);
+        formData.append('image', this.form.image);
+
+        const response = await fetch('http://localhost:5000/api/upload', {
+          method: 'POST',
+          body: formData
+        });
+
+        console.log('Response status:', response.status);
+
+        if (response.ok) {
+          const result = await response.json();
+          console.log('Upload successful:', result);
+          alert('Image uploaded successfully!');
+          this.resetForm();
+        } else {
+          // Handle both JSON and HTML responses
+          const responseText = await response.text();
+          console.error('Upload failed. Response:', responseText);
+          
+          try {
+            const errorData = JSON.parse(responseText);
+            alert('Upload failed: ' + (errorData.error || 'Unknown error'));
+          } catch {
+            alert('Upload failed: Server returned unexpected response. Status: ' + response.status);
+          }
+        }
+      } catch (error) {
+        console.error('Network error:', error);
+        alert('Network error: ' + error.message);
+      }
+    },
+    goToGallery() {
+      this.$emit('navigate-to-gallery');
+    },
+    resetForm() {
+      this.form.title = '';
+      this.form.description = '';
+      this.form.image = null;
+      this.imagePreview = null;
+      document.getElementById('image').value = '';
     }
-  } catch (error) {
-    console.error('Network error:', error);
-    alert('Network error: ' + error.message);
-  }
-},
   }
 }
 </script>
